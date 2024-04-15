@@ -1,0 +1,50 @@
+---
+- name: Generate CSR
+  hosts: all
+  vars:
+    kube_config_path: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/certs/"
+    kubernetes_user: "{{ lookup('ansible.builtin.env', 'USER') }}"
+  pre_tasks:
+  - name: "Create {{ kube_config_path }}"
+    file:
+      path: "{{ kube_config_path }}"
+      state: directory
+
+  tasks:
+  - name: fetch data from the Kubernetes Configuration file.
+    ansible.builtin.slurp:
+      src: "{{ remote_kube_config | default('/etc/kubernetes/admin.conf') }}"
+    register: _kubernetes_config
+
+  - name: set _admin_conf data
+    ansible.builtin.set_fact:
+      _admin_conf: "{{ _kubernetes_config.content | b64decode | from_yaml }}"
+
+  - name: debug _admin_conf
+    debug:
+      var: _admin_conf
+
+  - name: set admin_conf_cluster data
+    ansible.builtin.set_fact:
+      _admin_conf_cluster: "{{ _admin_conf.clusters[0].cluster }}"
+
+  - name: _admin_conf_cluster
+    debug:
+      var: _admin_conf_cluster
+
+  - name: "Create {{ kube_config_path }}{{ kubernetes_user }}-{{ inventory_hostname }}.crt"
+    connection: local
+    become: false
+    delegate_to: localhost
+    ansible.builtin.copy:
+      dest: "{{ kube_config_path }}{{ kubernetes_user }}-{{ inventory_hostname }}.crt"
+      content: "{{  _kubernetes_user_csr_info.resources[0].status.certificate | b64decode }}"
+
+  - name: "Create {{ kube_config_path }}.kube/config"
+    connection: local
+    become: false
+    delegate_to: localhost
+    run_once: true
+    ansible.builtin.template:
+      src: .kube/config
+      dest: ~/.kube/config
